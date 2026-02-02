@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional, Protocol, Set
 
 from continuity_core.event_log import EventLog
@@ -24,6 +25,7 @@ class IngestResult:
     chunks_ingested: int = 0
     skipped: int = 0
     errors: int = 0
+    error_details: list[dict[str, str]] = field(default_factory=list)
     duration_sec: float = 0.0
 
 
@@ -95,8 +97,10 @@ class IngestPipeline:
                 self._store_document(doc, chunks)
                 result.docs_ingested += 1
                 result.chunks_ingested += len(chunks)
-            except Exception:
+            except Exception as exc:
                 result.errors += 1
+                result.error_details.append({"path": str(path), "error": str(exc)})
+                logging.getLogger(__name__).warning("Ingest failed for %s: %s", path, exc)
         result.duration_sec = time.time() - start
         return result
 

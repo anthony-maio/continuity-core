@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -68,7 +69,7 @@ def _candidate_from_memory(mem: ScoredMemory, now: float) -> Candidate:
 
 def _candidate_from_text(store: str, text: str, now: float, base_relevance: float = 0.5) -> Candidate:
     return Candidate(
-        id=f"{store}:{hash(text)}",
+        id=_stable_id(store, text),
         text=text,
         store=store,
         token_cost=_token_cost(text),
@@ -83,3 +84,8 @@ def _candidate_from_text(store: str, text: str, now: float, base_relevance: floa
 
 def _token_cost(text: str) -> int:
     return max(1, int(len(text) * 0.25))
+
+
+def _stable_id(store: str, text: str) -> str:
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"{store}:{digest}"

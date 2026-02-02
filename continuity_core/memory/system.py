@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import time
 from dataclasses import dataclass
@@ -115,13 +116,15 @@ class TieredMemorySystem:
         try:
             store = PostgresEventStore(self.config.postgres_url)
             return EventLog(store)
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Postgres event log unavailable, falling back to in-memory: %s", exc)
             return EventLog()
 
     def _init_redis(self) -> Optional[RedisWorkingContext]:
         try:
             return RedisWorkingContext(self.config.redis_url)
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Redis working context unavailable: %s", exc)
             return None
 
     def _init_qdrant(self) -> tuple[Optional[QdrantMemoryStore], Optional[InMemoryStore]]:
@@ -134,12 +137,14 @@ class TieredMemorySystem:
                 vector_size=len(vector),
             )
             return store, None
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Qdrant memory store unavailable, using in-memory fallback: %s", exc)
             fallback = InMemoryStore(capacity=5000, embed_fn=self.embedder.embed)
             return None, fallback
 
     def _init_neo4j(self) -> Optional[Neo4jGraphStore]:
         try:
             return Neo4jGraphStore(self.config.neo4j_uri, self.config.neo4j_user, self.config.neo4j_password)
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Neo4j graph store unavailable: %s", exc)
             return None
