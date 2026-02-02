@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "continuity-core"
+version = "0.1.0"
+description = "Continuity Core (C2): biomimetic memory engine and MCP server"
+readme = "README.md"
+authors = [ { name = "Continuity Core Contributors" } ]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "neo4j>=5.23",
+    "psycopg>=3.1",
+    "qdrant-client>=1.8",
+    "redis>=5.0",
+    "requests>=2.32",
+]
+optional-dependencies = {
+  "dev" = ["pytest>=7.0"],
+  "ml" = ["sentence-transformers>=2.7"],
+}
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/your-org/continuity-core"
+
+[project.scripts]
+c2-ingest = "continuity_core.ingest.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["continuity_core*"]
