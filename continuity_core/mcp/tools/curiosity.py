@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from continuity_core.mra import EpistemicStressMonitor, VoidDetector
-from continuity_core.mcp.tools.introspect import _graph_sparsity, _normalize_graph
 from continuity_core.services.runtime import get_memory_system
 
 

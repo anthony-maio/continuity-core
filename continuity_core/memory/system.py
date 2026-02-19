@@ -105,16 +105,66 @@ class TieredMemorySystem:
             return None
         return self._mra_cache
 
-    # -- Credit assignment ------------------------------------------------
+    # -- Credit assignment + Harmonic Integration ---------------------------
 
     def credit(self, memory_ids: List[str], signal: float) -> None:
         """Boost salience of memories that were helpful."""
         signal = max(0.0, min(1.0, signal))
-        if self._fallback is not None:
+        if self._qdrant is not None:
+            for mid in memory_ids:
+                try:
+                    pts = self._qdrant._client.retrieve(
+                        collection_name=self._qdrant._collection,
+                        ids=[mid],
+                        with_payload=True,
+                    )
+                    if pts:
+                        cur = float(pts[0].payload.get("importance", 5))
+                        new_importance = min(10, cur + signal * 2.0)
+                        self._qdrant._client.set_payload(
+                            collection_name=self._qdrant._collection,
+                            payload={"importance": new_importance},
+                            points=[mid],
+                        )
+                except Exception:
+                    pass  # best-effort
+        elif self._fallback is not None:
             for item in self._fallback._items:
                 if item.id in memory_ids:
                     item.salience = min(1.0, item.salience + signal * 0.2)
                     item.touch()
+
+    def harmonic_integration(
+        self,
+        stress_delta: float,
+        resolutions: List[Dict[str, Any]],
+        compression_weight: float = 0.6,
+        resonance_weight: float = 0.4,
+    ) -> float:
+        """Compute and distribute the Harmonic Integration reward.
+
+        H = alpha_c * delta_C + alpha_r * delta_R
+
+        Where delta_C (compression) is measured by stress reduction and
+        delta_R (resonance) is measured by resolved contradictions
+        propagated through the memory store as credit.
+
+        Returns the reward magnitude H.
+        """
+        delta_c = max(0.0, -stress_delta)
+        delta_r = min(1.0, len(resolutions) * 0.2) if resolutions else 0.0
+        h = compression_weight * delta_c + resonance_weight * delta_r
+
+        if h > 0.01 and self._fallback is not None:
+            now = time.time()
+            recent_ids = [
+                item.id for item in self._fallback._items
+                if (now - item.last_access) < 3600
+            ]
+            if recent_ids:
+                self.credit(recent_ids, signal=min(1.0, h))
+
+        return h
 
     # -- Recall with decay + consolidation gating -------------------------
 
@@ -127,6 +177,10 @@ class TieredMemorySystem:
 
         if self._qdrant is not None:
             results = self._qdrant.recall(query, top_k=top_k, type_filter=type_filter)
+            # Update access timestamps so recency scoring stays fresh.
+            accessed_ids = [r.id for r in results]
+            if accessed_ids:
+                self._qdrant.update_access(accessed_ids)
             return self._score_results(results)
         if self._fallback is None:
             return []
