@@ -8,8 +8,11 @@ from typing import Any, Dict, List, Optional
 
 from continuity_core.config import C2Config, load_config
 from continuity_core.event_log import EventLog
+from continuity_core.memory.consolidation import RecallGatedConsolidator
 from continuity_core.memory.embeddings import build_embedder
 from continuity_core.memory.stores import InMemoryStore
+from continuity_core.mra.stress import StressResult
+from continuity_core.mra.voids import VoidReport
 from continuity_core.storage import Neo4jGraphStore, PostgresEventStore, QdrantMemoryStore, QdrantResult, RedisWorkingContext
 
 
@@ -22,6 +25,21 @@ class ScoredMemory:
     payload: Dict[str, Any]
 
 
+@dataclass
+class MRACache:
+    """Holds the most recent MRA stress and void results."""
+    last_stress: Optional[StressResult] = None
+    last_voids: Optional[VoidReport] = None
+    updated_at: float = 0.0
+    staleness_sec: float = 300.0
+
+    def is_stale(self, now: Optional[float] = None) -> bool:
+        if self.last_stress is None:
+            return True
+        now = now if now is not None else time.time()
+        return (now - self.updated_at) > self.staleness_sec
+
+
 class TieredMemorySystem:
     def __init__(self, config: Optional[C2Config] = None) -> None:
         self.config = config or load_config()
@@ -30,6 +48,10 @@ class TieredMemorySystem:
         self._redis = self._init_redis()
         self._qdrant, self._fallback = self._init_qdrant()
         self._neo4j = self._init_neo4j()
+        self._mra_cache = MRACache()
+        self._consolidator = RecallGatedConsolidator()
+        self._recall_count = 0
+        self._decay_every_n = 10
 
     @property
     def event_log(self) -> EventLog:
@@ -71,7 +93,38 @@ class TieredMemorySystem:
         item = self._fallback.add(content, salience=float(importance) / 10.0, metadata=metadata)
         return item.id
 
+    # -- MRA cache ---------------------------------------------------------
+
+    def update_mra_cache(self, stress: StressResult, voids: Optional[VoidReport] = None) -> None:
+        self._mra_cache.last_stress = stress
+        self._mra_cache.last_voids = voids
+        self._mra_cache.updated_at = time.time()
+
+    def get_mra_signals(self) -> Optional[MRACache]:
+        if self._mra_cache.is_stale():
+            return None
+        return self._mra_cache
+
+    # -- Credit assignment ------------------------------------------------
+
+    def credit(self, memory_ids: List[str], signal: float) -> None:
+        """Boost salience of memories that were helpful."""
+        signal = max(0.0, min(1.0, signal))
+        if self._fallback is not None:
+            for item in self._fallback._items:
+                if item.id in memory_ids:
+                    item.salience = min(1.0, item.salience + signal * 0.2)
+                    item.touch()
+
+    # -- Recall with decay + consolidation gating -------------------------
+
     def recall(self, query: str, top_k: int = 5, type_filter: Optional[str] = None) -> List[ScoredMemory]:
+        self._recall_count += 1
+
+        # Periodic decay sweep
+        if self._recall_count % self._decay_every_n == 0:
+            self._run_decay()
+
         if self._qdrant is not None:
             results = self._qdrant.recall(query, top_k=top_k, type_filter=type_filter)
             return self._score_results(results)
@@ -79,7 +132,11 @@ class TieredMemorySystem:
             return []
         scored = self._fallback.query(query, top_k=top_k)
         out: List[ScoredMemory] = []
+        occupancy = len(self._fallback._items) / max(1, self._fallback.capacity)
         for item, sim in scored:
+            # Consolidation gating: check if this recall should reinforce the item
+            if self._consolidator.should_consolidate(sim, occupancy):
+                item.touch()
             out.append(ScoredMemory(
                 id=item.id,
                 score=sim,
@@ -88,6 +145,13 @@ class TieredMemorySystem:
                 payload=item.metadata,
             ))
         return out
+
+    def _run_decay(self) -> None:
+        if self._fallback is not None:
+            self._fallback.apply_decay(
+                self.config.decay_rate,
+                self.config.decay_time_unit_sec,
+            )
 
     def _score_results(self, results: List[QdrantResult]) -> List[ScoredMemory]:
         out: List[ScoredMemory] = []

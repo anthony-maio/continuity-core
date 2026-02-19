@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
-from continuity_core.mcp.tools import build_context, introspect, write_event
+from continuity_core.mcp.tools import build_context, curiosity, introspect, write_event
 from continuity_core import __version__
 
 
@@ -103,6 +103,21 @@ def _build_registry() -> ToolRegistry:
                 },
             },
             handler=introspect,
+        )
+    )
+    registry.register(
+        Tool(
+            name="c2.curiosity",
+            description=(
+                "Return prioritized epistemic tensions, contradictions, and "
+                "bridging questions. Call this to discover what the agent should "
+                "be curious about — unresolved tensions in its own knowledge."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {},
+            },
+            handler=curiosity,
         )
     )
     return registry

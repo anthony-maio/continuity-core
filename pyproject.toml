@@ -17,15 +17,15 @@ dependencies = [
     "redis>=5.0",
     "requests>=2.32",
 ]
-optional-dependencies = {
-  "dev" = ["pytest>=7.0"],
-  "ml" = ["sentence-transformers>=2.7"],
-}
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+ml = ["sentence-transformers>=2.7"]
 
 [project.urls]
 "Homepage" = "https://github.com/your-org/continuity-core"
