@@ -17,6 +17,9 @@ class StubMemorySystem:
             ScoredMemory(id="mem2", score=0.6, content="fact two", memory_type="episodic", payload={"importance": 5}),
         ]
 
+    def get_mra_signals(self):
+        return None
+
 
 def test_context_pipeline_builds_prompt_pack():
     pipeline = ContextPipeline(memory_system=StubMemorySystem())
