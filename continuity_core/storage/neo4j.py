@@ -56,7 +56,16 @@ class Neo4jGraphStore:
         if node_types:
             query += " AND n.node_type IN $types"
             params["types"] = [t.value for t in node_types]
-        query += " RETURN n ORDER BY coalesce(n.updated_at, datetime({timezone:'UTC'})) DESC LIMIT $limit"
+        query += (
+            " RETURN n, size((n)--()) AS degree"
+            " ORDER BY coalesce(n.updated_at, datetime({timezone:'UTC'})) DESC"
+            " LIMIT $limit"
+        )
         with self._driver.session() as session:
             res = session.run(query, **params)
-            return [r["n"] for r in res]
+            out: List[Dict] = []
+            for r in res:
+                node = dict(r["n"])
+                node["degree"] = r["degree"]
+                out.append(node)
+            return out
